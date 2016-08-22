@@ -218,6 +218,13 @@ class ZsnesClient:
 
             if not data == b'\x02\x04\x80\x00\x00':
                 print("NOT standard control packet")
+
+            ## latter part of control packets -- everything after
+            ## \x02 -- 'control packet' header
+            ## \x04 -- state? of emulator.  Will increment if disconnected until \x0b which is pause
+            ## next 6 bytes: some combination of 'characters I'm responsible for'
+            ## and 'keys I'm pressing', I think.
+            ## DO NOT pad out this full length if you are not responsible for any controllers!
             
             self.numPacketsRecv = 0
             
@@ -234,6 +241,11 @@ class ZsnesClient:
             #elif self.isLeader:
                 #self.manager.sendToOthersBuffered(self, data):
                 #self.manager.distributeCurrentKeypresses(self)
+
+            if self.isLeader:
+                self.manager.sendToFollowingClients(data)
+            else:
+                self.manager.sendToLeaderOnce(data)
             
             #if self != self.manager.clients[-1]:
             #    self.manager.sendToOtherClients(self, data)
