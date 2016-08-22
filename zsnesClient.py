@@ -24,22 +24,45 @@ class ZsnesClient:
         self.isLeader = False
 
         self.emulatorState = 0x00
-        self.controlMask = b'\x02\x04\x80\x00\x00' # 'no buttons pressed' mask
+
+        # b'\x02\x04\x80\x00\x00' is the 'no buttons pressed' mask,
+        # but we don't actually start by sending that control packet.
+        self.controlMask = b'\x02\x00\x80\x00\x00'
+
         self.numPacketsRecv = 0
 
         self.state = ClientState.New
 
         self.lastNonControlPacket = None
 
+        self.packetLog = []
+
     def sendToClient(self, data):
+        self.packetLog.append(['send', data])
         self.conn.sendall(data)
 
     def recvFromClient(self):
         data = self.conn.recv(4096)
+        self.packetLog.append(['recv', data])
         # print("got data: " + str(binascii.hexlify(data)))
 
         return data
 
+    def printPacketLog(self):
+        prevPacket = None
+        numTimes = 0
+        
+        for packet in self.packetLog:
+            if packet == prevPacket:
+                numTimes += 1
+            else:
+                print(str(numTimes) + " instance of " + str(prevPacket))
+                prevPacket = packet
+                numTimes = 1
+
+        print(str(numTimes) + " instance of " + str(prevPacket))
+
+        
     def connect(self, in_data):
         data = in_data
 
@@ -54,7 +77,7 @@ class ZsnesClient:
         self.sendToClient(b'ID\xde142 \x01\x01') # we're always version 1.42!
 
         data = self.recvFromClient() # this is always b'\x01' ?
-        self.sendToClient(b'\x01') # unsure why necessary
+        self.sendToClient(b'\x01') # unsure why necessary. maybe a status code?
 
     def claimPlayer(self, playerNum):
         conversion = {1: b'\x03',
@@ -163,7 +186,9 @@ class ZsnesClient:
 
         elif data == b'\x1e\xe6\xfc\x51': # unsure, part of initialization,
             # but ok to receive more than one
-            self.manager.sendToOtherClients(self, data)
+            # trying just sending one to make packet log more similar to 1-on-1
+            #self.manager.sendToOtherClients(self, data)
+            self.manager.sendToOthersBuffered(self, data)
             #self.manager.sendToOtherClients(self, data)
 
         elif data[0] == 0xe5: # unsure, checking for doublesend
@@ -190,14 +215,25 @@ class ZsnesClient:
 
             
             print("received control packet " +  str(binascii.hexlify(data)) + " from " + str(self) + " after " + str(self.numPacketsRecv) + " 0x00 packets")
-            print("equal? " + str(data == b'\x02\x04\x80\x00\x00'))
+
+            if not data == b'\x02\x04\x80\x00\x00':
+                print("NOT standard control packet")
             
             self.numPacketsRecv = 0
             
             self.controlMask = data
-            
+
+            #print("self.emulatorState: " + str(self.emulatorState))
+
+            #self.sendToClient(bytes([2] + [self.emulatorState] + [128, 0, 0]))
+
             #self.manager.sendToOtherClients(self, data)
-            self.manager.distributeCurrentKeypresses(self)
+            #if data == b'\x02\x00\x80\x00\x00' and self.isLeader:
+            #    self.sendToClient(data)
+            #    self.manager.sendToOtherClients(self, data)
+            #elif self.isLeader:
+                #self.manager.sendToOthersBuffered(self, data):
+                #self.manager.distributeCurrentKeypresses(self)
             
             #if self != self.manager.clients[-1]:
             #    self.manager.sendToOtherClients(self, data)
