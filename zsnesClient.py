@@ -205,7 +205,7 @@ class ZsnesClient:
             ## these packets are OK to have more come in than 'expected' (from the 1-1).
             #self.manager.sendToOtherClients(self, data)
 
-            #0x80 is a 'c' for some reason. idk.
+            #0x80 is a 'c' for some reason. idk. seems like packet smooshing / something breaking.
 
             #if self == self.manager.clients[-1]:
             #    return
@@ -225,6 +225,28 @@ class ZsnesClient:
             ## next 6 bytes: some combination of 'characters I'm responsible for'
             ## and 'keys I'm pressing', I think.
             ## DO NOT pad out this full length if you are not responsible for any controllers!
+            ## If responsible for more than one character, you can have more than 1 set of 6 bytes.
+            ## The other party may respond, but will only respond with as many as they are responsible
+            ## for, which may be as little as \x02\x04 and no body.
+
+            ## hypothesis: if you get a control packet that's NOT the length you're expecting
+            ## (like you assume 'other' controls 2 players but you get a 10-byte packet)
+            ## it will crash?
+
+            ## TODO: break out various controller inputs and register them w/ the manager
+            ## when an input is received, manager can determine for each other client:
+            ## - how many controllers they expect 'others' to be controlling, and
+            ## - what the current state of those controllers are.
+            ## The header can be added on separately, we'll probably lock it to 0x04
+            ## (or maybe highest of relevant clients?)
+
+            ## Initial \x02\x00 packet is a 'zero' of everything you're responsible for I think
+            ## I'm not sure what the leading \x80 is on controller inputs.
+            ## The first 2 controllers per client seem to have them, and the others are just 00.
+            ## 80 prefix is used if it's connected to a keyboard or something.
+            ## If there are no keys assigned, it gets the 00 prefix.
+            ## Maybe we can just use the 80 control prefix all the time.
+            
             
             self.numPacketsRecv = 0
             
