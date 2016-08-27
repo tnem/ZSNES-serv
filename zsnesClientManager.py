@@ -33,6 +33,66 @@ class ZsnesClientManager:
         self.bufLead = []
         self.bufFoll = []
 
+        self.totalKeyPresses = {}
+
+    def allOtherClients(self, client):
+        return [c for c in self.clients if c != client]
+
+    def lowestEmuStateOfOthers(self, client):
+        otherClients = self.allOtherClients(client)
+        return min([client.emulatorState for client in otherClients])
+
+    def playerArrayForClient(self, client):
+        return [k for k,v in self.playerAssignments.items() if v == client]
+
+    ## note - this just builds the 'control' part of the packet.
+    ## it does not include the leading dispatch or state.
+    def buildControlPacketForClient(self, client):
+        packet = []
+        clientControllers = self.playerArrayForClient(client)
+        orderedControls = [v for k,v in self.totalKeyPresses.items() if k not in clientControllers]
+
+        ## get control packets for every controller not controlled by client
+        ## must be sorted
+        for control in orderedControls:
+            packet += b'\x80'
+            packet += control
+
+        return packet
+            
+    
+    ## Uses the current state of keypresses in self.totalKeyPresses
+    ## and sends out an update packet to every other client of the 'other's state
+    def sendControlsToOthers(self, sendingClient):
+        oclients = self.allOtherClients(sendingClient)
+
+        for client in oclients:
+            packet = bytes([2, sendingClient.emulatorState] + self.buildControlPacketForClient(client))
+            print("sending control packet: " + str(packet) + " to client: " + str(client))
+            client.sendToClient(packet)
+        
+
+    ## when we receive a control message from a client, send it here.
+    ## The manager is required to coordinate what clients have which controllers.
+    ## Once the manager knows the controller state of every client,
+    ## they can send out the corresponding 'other' control packets.
+    def handleControlsFromClient(self, client, data):
+        controls = data[2:]
+        clientControls = self.playerArrayForClient(client)
+
+        print("controls: " + str(controls))
+        print("clientControls: " + str(clientControls))
+        print("range var: " + str(int(len(controls) / 3)))
+
+        # each control packet is 3 bytes
+        for i in range(int(len(controls) / 3)):
+            print("i: " + str(i))
+            # ignore byte 0, it's just 'controller active'?
+            self.totalKeyPresses[clientControls[i]] = controls[1 + i*3 : 3 + i*3]
+
+        self.sendControlsToOthers(client)
+            
+
     def sendToLeaderOnce(self, data):
         self.bufLead.append(data)
         
@@ -99,13 +159,6 @@ class ZsnesClientManager:
                 ret.append(client)
 
         return ret
-    
-    def allOtherClients(self, client):
-        return [c for c in self.clients if c != client]
-
-    def lowestEmuStateOfOthers(self, client):
-        otherClients = self.allOtherClients(client)
-        return min([client.emulatorState for client in otherClients])
 
     def allClients(self):
         return self.clients
@@ -136,6 +189,7 @@ class ZsnesClientManager:
         if playerNum in self.playerAssignments: # if that player is already assigned
             if client == self.playerAssignments[playerNum]: # if they are assigned to client
                 self.playerAssignments.pop(playerNum)
+                self.totalKeyPresses.pop(playerNum)
                 for c in self.allOtherClients(client):
                     c.claimPlayer(playerNum)
             else: # player is assigned, but not to the one selecting it
@@ -144,6 +198,7 @@ class ZsnesClientManager:
                 client.sendChatMessage("player is assigned to someone else, blocking")
         else:
             self.playerAssignments[playerNum] = client
+            self.totalKeyPresses[playerNum] = b'\x00\x00'
             for c in self.allOtherClients(client):
                 c.claimPlayer(playerNum)
 
@@ -155,5 +210,6 @@ class ZsnesClientManager:
         if not 2 in self.playerAssignments:
             # starts with 1 X'd out and 2 checked, so free 1 and assign 2 properly
             self.playerAssignments[2] = client
+            self.totalKeyPresses[2] = b'\x00\x00'
         else:
             client.sendChatMessage("Please un-check player 2 and ignore the resulting error")

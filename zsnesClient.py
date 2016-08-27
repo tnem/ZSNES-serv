@@ -222,7 +222,7 @@ class ZsnesClient:
             ## latter part of control packets -- everything after
             ## \x02 -- 'control packet' header
             ## \x04 -- state? of emulator.  Will increment if disconnected until \x0b which is pause
-            ## next 6 bytes: some combination of 'characters I'm responsible for'
+            ## next 3 bytes: some combination of 'characters I'm responsible for'
             ## and 'keys I'm pressing', I think.
             ## DO NOT pad out this full length if you are not responsible for any controllers!
             ## If responsible for more than one character, you can have more than 1 set of 6 bytes.
@@ -264,13 +264,13 @@ class ZsnesClient:
                 #self.manager.sendToOthersBuffered(self, data):
                 #self.manager.distributeCurrentKeypresses(self)
 
-            if self.isLeader:
-                self.manager.sendToFollowingClients(data)
-            else:
-                self.manager.sendToLeaderOnce(data)
+            #if self.isLeader:
+            #    self.manager.sendToFollowingClients(data)
+            #else:
+            #    self.manager.sendToLeaderOnce(data)
+
+            self.manager.handleControlsFromClient(self, data)
             
-            #if self != self.manager.clients[-1]:
-            #    self.manager.sendToOtherClients(self, data)
             
         else: # debugging catchall
             print(str(self) + " sent new unknown packet " + str(binascii.hexlify(data)))
