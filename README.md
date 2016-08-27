@@ -5,6 +5,7 @@ A server to allow >2 ZSNES clients to connect to each other.
 Still has lots of broken parts.  Not intended for general use.
 
 Requires:
+* Python 3
 * ZSNES 1.42(n) (for testing)
 
 # General usage:
