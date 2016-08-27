@@ -181,8 +181,6 @@ class ZsnesClient:
             #self.sendToClient(data)
             self.manager.sendToOthersBuffered(self, data)
             #self.manager.sendToOtherClients(self, data)
-            #self.manager.sendToOtherClients(self, data)
-            #self.manager.sendToOthersBuffered(self, data)
 
         elif data == b'\x1e\xe6\xfc\x51': # unsure, part of initialization,
             # but ok to receive more than one
@@ -255,14 +253,6 @@ class ZsnesClient:
             #print("self.emulatorState: " + str(self.emulatorState))
 
             #self.sendToClient(bytes([2] + [self.emulatorState] + [128, 0, 0]))
-
-            #self.manager.sendToOtherClients(self, data)
-            #if data == b'\x02\x00\x80\x00\x00' and self.isLeader:
-            #    self.sendToClient(data)
-            #    self.manager.sendToOtherClients(self, data)
-            #elif self.isLeader:
-                #self.manager.sendToOthersBuffered(self, data):
-                #self.manager.distributeCurrentKeypresses(self)
 
             #if self.isLeader:
             #    self.manager.sendToFollowingClients(data)

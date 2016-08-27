@@ -81,12 +81,9 @@ class ZsnesClientManager:
         clientControls = self.playerArrayForClient(client)
 
         print("controls: " + str(controls))
-        print("clientControls: " + str(clientControls))
-        print("range var: " + str(int(len(controls) / 3)))
 
         # each control packet is 3 bytes
         for i in range(int(len(controls) / 3)):
-            print("i: " + str(i))
             # ignore byte 0, it's just 'controller active'?
             self.totalKeyPresses[clientControls[i]] = controls[1 + i*3 : 3 + i*3]
 
@@ -117,15 +114,6 @@ class ZsnesClientManager:
         self.clients.remove(client)
         self.playerAssignments = {k:v for k,v in self.playerAssignments.items() if v != client}
 
-    def distributeCurrentKeypresses(self, client):
-        "every other client needs the & of keymasks belonging to non-them clients."
-        for nonSubmittingClient in self.allOtherClients(client):
-            otherKeymasks = [c.controlMask for c in self.allOtherClients(nonSubmittingClient)]
-            resultingMask = bitwiseOrSeq(otherKeymasks)
-
-            print("sending control packet " + str(binascii.hexlify(resultingMask)) + " to " + str(nonSubmittingClient))
-            nonSubmittingClient.sendToClient(bitwiseOrSeq(otherKeymasks))
-            
     def listenForClients(self):
         while True:
             conn,addr = self.sock.accept()
