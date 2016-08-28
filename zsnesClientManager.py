@@ -68,7 +68,7 @@ class ZsnesClientManager:
 
         for client in oclients:
             packet = bytes([2, sendingClient.emulatorState] + self.buildControlPacketForClient(client))
-            print("sending control packet: " + str(packet) + " to client: " + str(client))
+            #print("sending control packet: " + str(packet) + " to client: " + str(client))
             client.sendToClient(packet)
         
 
@@ -80,7 +80,7 @@ class ZsnesClientManager:
         controls = data[2:]
         clientControls = self.playerArrayForClient(client)
 
-        print("controls: " + str(controls))
+        # print("controls: " + str(controls))
 
         # each control packet is 3 bytes
         for i in range(int(len(controls) / 3)):

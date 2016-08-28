@@ -212,10 +212,10 @@ class ZsnesClient:
             # but it is NOT sent if there has been an actual control packet sent.
 
             
-            print("received control packet " +  str(binascii.hexlify(data)) + " from " + str(self) + " after " + str(self.numPacketsRecv) + " 0x00 packets")
+            #print("received control packet " +  str(binascii.hexlify(data)) + " from " + str(self) + " after " + str(self.numPacketsRecv) + " 0x00 packets")
 
             if not data == b'\x02\x04\x80\x00\x00':
-                print("NOT standard control packet")
+                print(str(data))
 
             ## latter part of control packets -- everything after
             ## \x02 -- 'control packet' header
