@@ -33,11 +33,16 @@ class ZsnesClientManager:
         self.bufLead = []
         self.bufFoll = []
 
+        self.loopPackets = {}
+
         self.totalKeyPresses = {}
+
+    def setLoopPacket(self, client, data):
+        self.loopPackets[client] = data
 
     def allOtherClients(self, client):
         return [c for c in self.clients if c != client]
-
+    
     def lowestEmuStateOfOthers(self, client):
         otherClients = self.allOtherClients(client)
         return min([client.emulatorState for client in otherClients])
@@ -87,9 +92,57 @@ class ZsnesClientManager:
             # ignore byte 0, it's just 'controller active'?
             self.totalKeyPresses[clientControls[i]] = controls[1 + i*3 : 3 + i*3]
 
-        self.sendControlsToOthers(client)
-            
+        print("set totalKeyPresses: " + str(self.totalKeyPresses))
 
+        #self.sendControlsToOthers(client)
+            
+    ## zsnes just sends a packet EVERY 0.033 seconds, and it is:
+    # - A modified control packet, if the keys have changed since the last packet
+    # - a 'current state' control packet if the keys haven't changed since the last control packet
+    # - 0x0004 (or whatever client state is) otherwise.
+    def sendLoopPacketsToClients(self):
+        for client in self.clients:
+            otherClients = self.allOtherClients(client)
+
+            priorityPacket = [-1]
+            
+            for client in otherClients:
+                if self.loopPackets[client][0] > priorityPacket[0]:
+                    priorityPacket = self.loopPackets[client]
+
+            if priorityPacket[0] == 0: ## todo: handle different client states - 4, 5, 6, etc
+                client.sendToClient(priorityPacket)
+                # pass
+            elif priorityPacket[0] == 2:
+                packet = bytes([2, client.emulatorState] + self.buildControlPacketForClient(client))
+                print("sending control packet: " + str(packet) + " to client: " + str(client))
+                client.sendToClient(packet)
+                # pass
+            elif priorityPacket[0] == 229: ## 0xe5 starter packet
+                client.sendToClient(b'\xe5')
+
+    def mainPacketLoop(self):
+        timeBetweenPackets = 0.033
+        
+        startTime = time.time()
+        while True:
+            self.sendLoopPacketsToClients()
+            sleepTime = timeBetweenPackets - ((time.time() - startTime) % timeBetweenPackets)
+            time.sleep(sleepTime)
+                
+    ## When all clients connected have sent in their 0xe5 packet,
+    ## we send back those packets and start the main loop.
+    def tryStartMainLoop(self):
+        if len(self.loopPackets.keys()) == len(self.clients) and \
+           all(packet == b'\xe5' for packet in self.loopPackets.values()):
+
+            newThread = threading.Thread(target = self.mainPacketLoop)
+            newThread.start()
+            
+        else:
+            print("prereqs not met to start main loop")
+                
+        
     def sendToLeaderOnce(self, data):
         self.bufLead.append(data)
         
