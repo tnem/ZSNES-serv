@@ -180,6 +180,7 @@ class ZsnesClient:
 
             # self.manager.sendToOthersBuffered(self, data)
             self.manager.setLoopPacket(self, data)
+            self.manager.sendPacketForClient(self)
 
         elif data == b'\x1e\xe6\xfc\x51': # unsure, part of initialization,
             # but ok to receive more than one
@@ -193,10 +194,10 @@ class ZsnesClient:
             # just mirroring back for now, which is a brittle hacky thing to do!
             # send back only when everyone has put in their e5?
 
-            # self.manager.sendToOthersBuffered(self, data)
-            self.manager.setLoopPacket(self, data)
+            self.manager.sendToOthersBuffered(self, data)
+            # self.manager.setLoopPacket(self, data)
             # time.sleep(0.5)
-            self.manager.tryStartMainLoop()
+            #self.manager.tryStartMainLoop()
 
         # add 'and if' to make sure client state is in the right state (i.e. foundRom)
         # note that if you hit 'esc' in-game to pause, 0x02 packets are chat messages again
@@ -262,6 +263,8 @@ class ZsnesClient:
 
             self.manager.handleControlsFromClient(self, data)
             self.manager.setLoopPacket(self, data)
+            self.manager.sendPacketForClient(self)
+
             
             
         else: # debugging catchall
