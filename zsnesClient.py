@@ -156,11 +156,11 @@ class ZsnesClient:
 
         elif data[0] == 0x0d: # file not found on remote
             print("file not found on remote")
-            self.manager.sendToOtherClients(self, data)
+            self.manager.sendToOthersBuffered(self, data)
 
         elif data[0] == 0xea: # acknowledging file found from leader? 
             print("acknowledge file found")
-            self.manager.sendToOtherClients(self, data)
+            self.manager.sendToOthersBuffered(self, data)
 
         elif data[0] == 0xe9: # follower requesting game file?
             self.state = ClientState.RequestSave
