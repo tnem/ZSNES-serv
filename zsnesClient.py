@@ -41,12 +41,12 @@ class ZsnesClient:
         self.saveBuffer = []
 
     def sendToClient(self, data):
-        self.packetLog.append(['send', data])
+        # self.packetLog.append(['send', data])
         self.conn.sendall(data)
 
     def recvFromClient(self):
         data = self.conn.recv(4096)
-        self.packetLog.append(['recv', data])
+        # self.packetLog.append(['recv', data])
         # print("got data: " + str(binascii.hexlify(data)))
 
         return data
