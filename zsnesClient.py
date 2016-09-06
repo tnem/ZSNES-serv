@@ -11,6 +11,8 @@ class ClientState():
     Disconnected = 1
     Connected = 2
     FoundRom = 3
+    RequestSave = 4
+    InGame = 5
 
     
     
@@ -36,6 +38,7 @@ class ZsnesClient:
         self.lastNonControlPacket = None
 
         self.packetLog = []
+        self.saveBuffer = []
 
     def sendToClient(self, data):
         self.packetLog.append(['send', data])
@@ -98,179 +101,188 @@ class ZsnesClient:
     def msgDispatcher(self, init_data):
         data = init_data
 
-        if data[0:2] == b'ID': # client connection
-            print("client connecting")
-            self.connect(data)
-            self.state = ClientState.Connected
+        if self.state == ClientState.RequestSave:
+            print("stashing savebuffer data")
+            self.saveBuffer += data
+            ## end of 'sending game data' - will appear on its own if no save data is sent
+            if data[-4:] == b'\x1e\xe6\xfc\x51':
+                # if len(data) > 4, then save data is being sent.
+                print("sending stashed savebuffer data")
+                #self.manager.sendToOtherClients(self, data)
+                self.state = ClientState.InGame
+                self.manager.sendToOthersBuffered(self, bytes(self.saveBuffer))
+                #self.manager.sendToOtherClients(self, data)
+        else:
+            if data[0:2] == b'ID': # client connection
+                print("client connecting")
+                self.connect(data)
+                self.state = ClientState.Connected
 
-            self.manager.syncNewClientPlayers(self)
+                self.manager.syncNewClientPlayers(self)
             
-        elif all(x == 0xff for x in data) or data == b'': # client quitting / socket empty
-            print("client exiting!")
-            self.state = ClientState.Disconnected
-            self.manager.removeClient(self)
+            elif all(x == 0xff for x in data) or data == b'': # client quitting / socket empty
+                print("client exiting!")
+                self.state = ClientState.Disconnected
+                self.manager.removeClient(self)
 
-        elif data[0] == 0x02 and self.state == ClientState.Connected: # sending chat message
-            "Chat messages are encoded as [0x02 string_of_message 0x00]"
-            msg = data[1:-1].decode("ascii")
-            self.manager.sendToOtherClients(self, data)
-            print("receiving chat message: " + msg)
+            elif data[0] == 0x02 and self.state == ClientState.Connected: # sending chat message
+                "Chat messages are encoded as [0x02 string_of_message 0x00]"
+                msg = data[1:-1].decode("ascii")
+                self.manager.sendToOtherClients(self, data)
+                print("receiving chat message: " + msg)
 
-        elif data[0] in [0x03, 0x04, 0x05, 0x06, 0x07] and \
-             self.state == ClientState.Connected: # player assignment message
-            self.manager.claimPlayer(self, (data[0] - 2))
+            elif data[0] in [0x03, 0x04, 0x05, 0x06, 0x07] and \
+                self.state == ClientState.Connected: # player assignment message
+                self.manager.claimPlayer(self, (data[0] - 2))
 
-        elif data[0] == 0x14: # setting latency
-            self.manager.sendToOtherClients(self, data)
+            elif data[0] == 0x14: # setting latency
+                self.manager.sendToOtherClients(self, data)
 
-        elif data[0] == 0x08: # setting back buffer
-            self.manager.sendToOtherClients(self, data)
+            elif data[0] == 0x08: # setting back buffer
+                self.manager.sendToOtherClients(self, data)
 
-        ## save data might need to be modified a little to work 3-way
-        ## currently neutered (except none), and it must be set manually.
-        elif data[0] == 0x29: # wants to use local save data
-            #self.manager.sendToOtherClients(self, data)
-            pass
+                ## save data might need to be modified a little to work 3-way
+                ## currently neutered (except none), and it must be set manually.
+            elif data[0] == 0x29: # wants to use local save data
+                self.manager.sendToOtherClients(self, data)
+                pass
 
-        elif data[0] == 0x2a: # wants to use remote save data
-            #self.manager.sendToOtherClients(self, data)
-            pass
+            elif data[0] == 0x2a: # wants to use remote save data
+                #self.manager.sendToOtherClients(self, data)
+                pass
 
-        elif data[0] == 0x32: # wants to use no save data
-            self.manager.sendToOtherClients(self, data)
+            elif data[0] == 0x32: # wants to use no save data
+                self.manager.sendToOtherClients(self, data)
             
-        ## starting game management
+                ## starting game management
 
-        elif data[0] == 0x0a: # filename of rom to start
-            print("attempting to launch game: " + data[1:-1].decode("ascii"))
-            self.manager.sendToOtherClients(self, data)
-            self.isLeader = True
-            self.state = ClientState.FoundRom
+            elif data[0] == 0x0a: # filename of rom to start
+                print("attempting to launch game: " + data[1:-1].decode("ascii"))
+                self.manager.sendToOtherClients(self, data)
+                self.isLeader = True
+                self.state = ClientState.FoundRom
 
-        elif data[0] == 0x0b: # file found on remote
-            print("ROM found on remote successfully")
-            self.state = ClientState.FoundRom
+            elif data[0] == 0x0b: # file found on remote
+                print("ROM found on remote successfully")
+                self.state = ClientState.FoundRom
 
-            if self.manager.allClientsAre(ClientState.FoundRom): # when all remotes are OK
-                self.manager.sendToLeaderClient(b'\x0b')
+                if self.manager.allClientsAre(ClientState.FoundRom): # when all remotes are OK
+                    self.manager.sendToLeaderClient(b'\x0b')
 
-        elif data[0] == 0x0d: # file not found on remote
-            print("file not found on remote")
-            self.manager.sendToOthersBuffered(self, data)
+            elif data[0] == 0x0d: # file not found on remote
+                print("file not found on remote")
+                self.manager.sendToOthersBuffered(self, data)
 
-        elif data[0] == 0xea: # acknowledging file found from leader? 
-            print("acknowledge file found")
-            self.manager.sendToOthersBuffered(self, data)
+            ## 0xea and 0xe9 can happen in either order, not exactly sure
+            elif data[0] == 0xea: # acknowledging save file request?
+                print("acknowledge file found")
+                self.state = ClientState.RequestSave
+                self.manager.sendToOthersBuffered(self, data)
 
-        elif data[0] == 0xe9: # follower requesting game file?
-            self.state = ClientState.RequestSave
+            elif data[0] == 0xe9: # follower requesting game file?
+                print(str(self) + " requesting save game file")
+                self.state = ClientState.RequestSave
+                self.manager.sendToOthersBuffered(self, data)
 
-        ## in-game
+            ## in-game
 
-        elif data[0] == 0x00: # no idea anymore - some sort of emulator state?
-            ## double-sending breaks sync?
-            if data != self.lastNonControlPacket:
-                self.lastNonControlPacket = data
-                print(str(self) + " sent new non-control packet " + str(binascii.hexlify(data)))
+            elif data[0] == 0x00: # no idea anymore - some sort of emulator state?
+                ## double-sending breaks sync?
+                if data != self.lastNonControlPacket:
+                    self.lastNonControlPacket = data
+                    print(str(self) + " sent new non-control packet " + str(binascii.hexlify(data)))
 
-            self.numPacketsRecv += 1
-            #print(str(self) + " at state " + str(data[1]))
-            self.emulatorState = data[1]
-            lowestOthers = self.manager.lowestEmuStateOfOthers(self)
+                self.numPacketsRecv += 1
+                #print(str(self) + " at state " + str(data[1]))
+                self.emulatorState = data[1]
+                lowestOthers = self.manager.lowestEmuStateOfOthers(self)
 
-            # self.manager.sendToOthersBuffered(self, data)
-            self.manager.setLoopPacket(self, data)
-            self.manager.sendPacketForClient(self)
+                # self.manager.sendToOthersBuffered(self, data)
+                self.manager.setLoopPacket(self, data)
+                self.manager.sendPacketForClient(self)
 
-        elif data == b'\x1e\xe6\xfc\x51': # unsure, part of initialization,
-            # but ok to receive more than one
-            # trying just sending one to make packet log more similar to 1-on-1
-            #self.manager.sendToOtherClients(self, data)
-            self.manager.sendToOthersBuffered(self, data)
-            #self.manager.sendToOtherClients(self, data)
+            elif data[0] == 0xe5: # unsure, checking for doublesend
+                # NOT okay to doublesend
+                # just mirroring back for now, which is a brittle hacky thing to do!
+                # send back only when everyone has put in their e5?
 
-        elif data[0] == 0xe5: # unsure, checking for doublesend
-            # NOT okay to doublesend
-            # just mirroring back for now, which is a brittle hacky thing to do!
-            # send back only when everyone has put in their e5?
+                self.manager.sendToOthersBuffered(self, data)
+                # self.manager.setLoopPacket(self, data)
+                # time.sleep(0.5)
+                #self.manager.tryStartMainLoop()
 
-            self.manager.sendToOthersBuffered(self, data)
-            # self.manager.setLoopPacket(self, data)
-            # time.sleep(0.5)
-            #self.manager.tryStartMainLoop()
+            # add 'and if' to make sure client state is in the right state (i.e. foundRom)
+            # note that if you hit 'esc' in-game to pause, 0x02 packets are chat messages again
+            elif data[0] == 0x02: # in-game controls
+                ## these packets are OK to have more come in than 'expected' (from the 1-1).
+                #self.manager.sendToOtherClients(self, data)
 
-        # add 'and if' to make sure client state is in the right state (i.e. foundRom)
-        # note that if you hit 'esc' in-game to pause, 0x02 packets are chat messages again
-        elif data[0] == 0x02: # in-game controls
-            ## these packets are OK to have more come in than 'expected' (from the 1-1).
-            #self.manager.sendToOtherClients(self, data)
+                #0x80 is a 'c' for some reason. idk. seems like packet smooshing / something breaking.
 
-            #0x80 is a 'c' for some reason. idk. seems like packet smooshing / something breaking.
+                #if self == self.manager.clients[-1]:
+                #    return
 
-            #if self == self.manager.clients[-1]:
-            #    return
-
-            # There is a heartbeat one sent out every so often,
-            # but it is NOT sent if there has been an actual control packet sent.
-
-            
-            #print("received control packet " +  str(binascii.hexlify(data)) + " from " + str(self) + " after " + str(self.numPacketsRecv) + " 0x00 packets")
-
-            if not data == b'\x02\x04\x80\x00\x00':
-                print(str(data))
-
-            ## latter part of control packets -- everything after
-            ## \x02 -- 'control packet' header
-            ## \x04 -- state? of emulator.  Will increment if disconnected until \x0b which is pause
-            ## next 3 bytes: some combination of 'characters I'm responsible for'
-            ## and 'keys I'm pressing', I think.
-            ## DO NOT pad out this full length if you are not responsible for any controllers!
-            ## If responsible for more than one character, you can have more than 1 set of 6 bytes.
-            ## The other party may respond, but will only respond with as many as they are responsible
-            ## for, which may be as little as \x02\x04 and no body.
-
-            ## hypothesis: if you get a control packet that's NOT the length you're expecting
-            ## (like you assume 'other' controls 2 players but you get a 10-byte packet)
-            ## it will crash?
-
-            ## TODO: break out various controller inputs and register them w/ the manager
-            ## when an input is received, manager can determine for each other client:
-            ## - how many controllers they expect 'others' to be controlling, and
-            ## - what the current state of those controllers are.
-            ## The header can be added on separately, we'll probably lock it to 0x04
-            ## (or maybe highest of relevant clients?)
-
-            ## Initial \x02\x00 packet is a 'zero' of everything you're responsible for I think
-            ## I'm not sure what the leading \x80 is on controller inputs.
-            ## The first 2 controllers per client seem to have them, and the others are just 00.
-            ## 80 prefix is used if it's connected to a keyboard or something.
-            ## If there are no keys assigned, it gets the 00 prefix.
-            ## Maybe we can just use the 80 control prefix all the time.
-            
-            
-            self.numPacketsRecv = 0
-            
-            self.controlMask = data
-
-            #print("self.emulatorState: " + str(self.emulatorState))
-
-            #self.sendToClient(bytes([2] + [self.emulatorState] + [128, 0, 0]))
-
-            #if self.isLeader:
-            #    self.manager.sendToFollowingClients(data)
-            #else:
-            #    self.manager.sendToLeaderOnce(data)
-
-            self.manager.handleControlsFromClient(self, data)
-            self.manager.setLoopPacket(self, data)
-            self.manager.sendPacketForClient(self)
+                # There is a heartbeat one sent out every so often,
+                # but it is NOT sent if there has been an actual control packet sent.
 
             
+                #print("received control packet " +  str(binascii.hexlify(data)) + " from " + str(self) + " after " + str(self.numPacketsRecv) + " 0x00 packets")
+
+                if not data == b'\x02\x04\x80\x00\x00':
+                    print(str(data))
+
+                ## latter part of control packets -- everything after
+                ## \x02 -- 'control packet' header
+                ## \x04 -- state? of emulator.  Will increment if disconnected until \x0b which is pause
+                ## next 3 bytes: some combination of 'characters I'm responsible for'
+                ## and 'keys I'm pressing', I think.
+                ## DO NOT pad out this full length if you are not responsible for any controllers!
+                ## If responsible for more than one character, you can have more than 1 set of 6 bytes.
+                ## The other party may respond, but will only respond with as many as they are responsible
+                ## for, which may be as little as \x02\x04 and no body.
+
+                ## hypothesis: if you get a control packet that's NOT the length you're expecting
+                ## (like you assume 'other' controls 2 players but you get a 10-byte packet)
+                ## it will crash?
+
+                ## TODO: break out various controller inputs and register them w/ the manager
+                ## when an input is received, manager can determine for each other client:
+                ## - how many controllers they expect 'others' to be controlling, and
+                ## - what the current state of those controllers are.
+                ## The header can be added on separately, we'll probably lock it to 0x04
+                ## (or maybe highest of relevant clients?)
+
+                ## Initial \x02\x00 packet is a 'zero' of everything you're responsible for I think
+                ## I'm not sure what the leading \x80 is on controller inputs.
+                ## The first 2 controllers per client seem to have them, and the others are just 00.
+                ## 80 prefix is used if it's connected to a keyboard or something.
+                ## If there are no keys assigned, it gets the 00 prefix.
+                ## Maybe we can just use the 80 control prefix all the time.
             
-        else: # debugging catchall
-            print(str(self) + " sent new unknown packet " + str(binascii.hexlify(data)))
-            self.manager.sendToOtherClients(self, data)
-            #self.manager.sendToOthersBuffered(self, data)
+            
+                self.numPacketsRecv = 0
+            
+                self.controlMask = data
+
+                #print("self.emulatorState: " + str(self.emulatorState))
+
+                #self.sendToClient(bytes([2] + [self.emulatorState] + [128, 0, 0]))
+
+                #if self.isLeader:
+                #    self.manager.sendToFollowingClients(data)
+                #else:
+                #    self.manager.sendToLeaderOnce(data)
+
+                self.manager.handleControlsFromClient(self, data)
+                self.manager.setLoopPacket(self, data)
+                self.manager.sendPacketForClient(self)
+
+            
+            
+            else: # debugging catchall
+                print(str(self) + " sent new unknown packet " + str(binascii.hexlify(data)))
+                self.manager.sendToOtherClients(self, data)
+                #self.manager.sendToOthersBuffered(self, data)
 
             
 
