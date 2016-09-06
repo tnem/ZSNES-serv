@@ -26,4 +26,5 @@ Client:
 # Currently unhandled:
 * Pausing
 * Save states
+* Desyncs
 * Probably more
