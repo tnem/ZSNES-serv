@@ -19,10 +19,11 @@ Client:
 * connect to server on port 7845
 * coordinate player select across clients
 
-Notes:
+# Notes:
 * ZSNES on linux can take up to a minute to load a netplay saved game.  Be patient!
 * When you save your game, exit ZSNES via its menu, not just clicking X to ensure a good save.
 
-Currently unhandled:
+# Currently unhandled:
 * Pausing
 * Save states
+* Probably more
