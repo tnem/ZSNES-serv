@@ -2,11 +2,9 @@
 
 A server to allow >2 ZSNES clients to connect to each other.
 
-Still has lots of broken parts.  Not intended for general use.
-
 Requires:
 * Python 3
-* ZSNES 1.42(n) (for testing)
+* ZSNES 1.42(n)
 
 # General usage:
 
@@ -20,4 +18,11 @@ Client:
 * uncheck 'Use udp instead of tcp'
 * connect to server on port 7845
 * coordinate player select across clients
-* when all clients are connected, select 'Save Data: None'
+
+Notes:
+* ZSNES on linux can take up to a minute to load a netplay saved game.  Be patient!
+* When you save your game, exit ZSNES via its menu, not just clicking X to ensure a good save.
+
+Currently unhandled:
+* Pausing
+* Save states
