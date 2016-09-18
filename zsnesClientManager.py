@@ -23,6 +23,31 @@ def bitwiseOrSeq(xs):
 
     return temp
 
+## The idea is to have one PacketManager per client.
+## Every time a client sends in a packet, it gets added to every other client's PacketManager.
+## Each packetmanager then tries to determine if it can send anything along by merging together
+## as many packets as possible from clients.
+class PacketManager:
+    def __init__(self, client):
+        self.client = client
+
+        self.receivedPackets = {}
+
+    def minBufferLength(self):
+        k,v = min(receivedPackets.items(), key = lambda x: len(x[1]))
+
+        return len(v)
+        
+    def tryToSendPacket(self):
+        pass
+        
+    def addPacketForClient(self, client, data):
+        self.receivedPackets[client] += data
+
+    def addClient(self, client):
+        self.receivedPackets[client] = []
+    
+
 class ZsnesClientManager:
     def __init__(self, sock):
         self.clients = []

@@ -98,6 +98,27 @@ class ZsnesClient:
     def startGame(self, fileName):
         pass
 
+    ## intended to be called only during the main loop section, where we expect only:
+    ## 0x00 - general status keepalive, always 4 bytes
+    ## 0x02 - control packet, 4 + 6 * x bytes based on number of players
+    def splitBufferIntoPackets(self, buffer):
+        firstPacket = []
+        restBuffer = buffer
+        
+        if buffer[0] == 0:
+            firstPacket = buffer[:2]
+            restBuffer = buffer[2:]
+        elif buffer[0] == 2:
+            firstPacket = buffer[:2]
+            restBuffer = buffer[2:]
+
+            while len(restBuffer) > 0 and restBuffer[0] == 128:
+                firstPacket += restBuffer[:3]
+                restBuffer = restBuffer[3:]
+
+        return firstPacket,restBuffer
+        
+
     def msgDispatcher(self, init_data):
         data = init_data
 
@@ -187,6 +208,9 @@ class ZsnesClient:
             ## in-game
 
             elif data[0] == 0x00: # no idea anymore - some sort of emulator state?
+
+                data,restData = self.splitBufferIntoPackets(data)
+                
                 ## double-sending breaks sync?
                 if data != self.lastNonControlPacket:
                     self.lastNonControlPacket = data
@@ -200,6 +224,9 @@ class ZsnesClient:
                 # self.manager.sendToOthersBuffered(self, data)
                 self.manager.setLoopPacket(self, data)
                 self.manager.sendPacketForClient(self)
+
+                if len(restData) > 0:
+                    self.msgDispatcher(restData)
 
             elif data[0] == 0xe5: # unsure, checking for doublesend
                 # NOT okay to doublesend
@@ -225,11 +252,12 @@ class ZsnesClient:
                 # There is a heartbeat one sent out every so often,
                 # but it is NOT sent if there has been an actual control packet sent.
 
+                data,restData = self.splitBufferIntoPackets(data)
             
                 #print("received control packet " +  str(binascii.hexlify(data)) + " from " + str(self) + " after " + str(self.numPacketsRecv) + " 0x00 packets")
 
-                if not data == b'\x02\x04\x80\x00\x00':
-                    print(str(data))
+                # if not data == b'\x02\x04\x80\x00\x00':
+                    # print(str(data))
 
                 ## latter part of control packets -- everything after
                 ## \x02 -- 'control packet' header
@@ -277,14 +305,15 @@ class ZsnesClient:
                 self.manager.setLoopPacket(self, data)
                 self.manager.sendPacketForClient(self)
 
+                if len(restData) > 0:
+                    self.msgDispatcher(restData)
+
             
             
             else: # debugging catchall
                 print(str(self) + " sent new unknown packet " + str(binascii.hexlify(data)))
                 self.manager.sendToOtherClients(self, data)
                 #self.manager.sendToOthersBuffered(self, data)
-
-            
 
     def serve(self):
         #self.connect()
