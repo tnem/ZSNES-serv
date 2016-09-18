@@ -14,12 +14,41 @@ class ClientState():
     RequestSave = 4
     InGame = 5
 
-    
+## The idea is to have one PacketManager per client.
+## Every time a client sends in a packet, it gets added to every other client's PacketManager.
+## Each packetmanager then tries to determine if it can send anything along by merging together
+## as many packets as possible from clients.
+## It's used only for the main gameplay loop.
+class PacketManager:
+    def __init__(self, client):
+        self.client = client
+
+        self.receivedPackets = {}
+
+    def minBufferLength(self):
+        k,v = min(receivedPackets.items(), key = lambda x: len(x[1]))
+
+        return len(v)
+        
+    def tryToSendPacket(self):
+        if self.minBufferLength() > 0:
+            pass
+        
+        pass
+        
+    def addPacketForClient(self, client, data):
+        self.receivedPackets[client] += data
+
+    def addClient(self, client):
+        self.receivedPackets[client] = []
+        
     
 class ZsnesClient:
     def __init__(self, manager, id, conn, addr):
         self.conn = conn
         self.addr = addr
+
+        self.packetManager = PacketManager(self)
         
         self.manager = manager
         self.id = id

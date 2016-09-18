@@ -23,31 +23,6 @@ def bitwiseOrSeq(xs):
 
     return temp
 
-## The idea is to have one PacketManager per client.
-## Every time a client sends in a packet, it gets added to every other client's PacketManager.
-## Each packetmanager then tries to determine if it can send anything along by merging together
-## as many packets as possible from clients.
-class PacketManager:
-    def __init__(self, client):
-        self.client = client
-
-        self.receivedPackets = {}
-
-    def minBufferLength(self):
-        k,v = min(receivedPackets.items(), key = lambda x: len(x[1]))
-
-        return len(v)
-        
-    def tryToSendPacket(self):
-        pass
-        
-    def addPacketForClient(self, client, data):
-        self.receivedPackets[client] += data
-
-    def addClient(self, client):
-        self.receivedPackets[client] = []
-    
-
 class ZsnesClientManager:
     def __init__(self, sock):
         self.clients = []
@@ -75,6 +50,11 @@ class ZsnesClientManager:
     def playerArrayForClient(self, client):
         return [k for k,v in self.playerAssignments.items() if v == client]
 
+    def handleLoopPacket(self, client, data):
+        for oclient in self.allOtherClients(client):
+            oclient.packetManager.addPacketForClient(client, data)
+            oclient.packetManager.tryToSendPacket()
+    
     ## note - this just builds the 'control' part of the packet.
     ## it does not include the leading dispatch or state.
     def buildControlPacketForClient(self, client):
@@ -168,6 +148,11 @@ class ZsnesClientManager:
         
     def addClient(self, conn, addr):
         newClient = ZsnesClient(self, len(self.clients), conn, addr)
+
+        for client in self.clients:
+            newClient.packetManager.addClient(client)
+            client.packetManager.addClient(newClient)
+        
         self.clients.append(newClient)
 
         return newClient
