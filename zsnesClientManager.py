@@ -53,7 +53,7 @@ class ZsnesClientManager:
     def handleLoopPacket(self, client, data):
         for oclient in self.allOtherClients(client):
             oclient.packetManager.addPacketForClient(client, data)
-            oclient.packetManager.tryToSendPacket()
+            oclient.packetManager.tryToSendPackets()
     
     ## note - this just builds the 'control' part of the packet.
     ## it does not include the leading dispatch or state.
