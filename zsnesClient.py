@@ -6,6 +6,26 @@ import time
 
 import pdb
 
+## intended to be called only during the main loop section, where we expect only:
+## 0x00 - general status keepalive, always 4 bytes
+## 0x02 - control packet, 4 + 6 * x bytes based on number of players
+def splitBufferIntoPackets(buffer):
+    firstPacket = []
+    restBuffer = buffer
+    
+    if buffer[0] == 0:
+        firstPacket = buffer[:2]
+        restBuffer = buffer[2:]
+    elif buffer[0] == 2:
+        firstPacket = buffer[:2]
+        restBuffer = buffer[2:]
+
+    while len(restBuffer) > 0 and restBuffer[0] == 128:
+        firstPacket += restBuffer[:3]
+        restBuffer = restBuffer[3:]
+
+    return firstPacket,restBuffer
+
 class ClientState():
     New = 0
     Disconnected = 1
@@ -14,12 +34,63 @@ class ClientState():
     RequestSave = 4
     InGame = 5
 
-    
+## The idea is to have one PacketManager per client.
+## Every time a client sends in a packet, it gets added to every other client's PacketManager.
+## Each packetmanager then tries to determine if it can send anything along by merging together
+## as many packets as possible from clients.
+## It's used only for the main gameplay loop.
+class PacketManager:
+    def __init__(self, client):
+        self.client = client
+
+        self.receivedPackets = {}
+
+    def minBufferLength(self):
+        k,v = min(self.receivedPackets.items(), key = lambda x: len(x[1]))
+
+        return len(v)
+
+    def choosePacketToSend(self):
+        pass
+        
+    def tryToSendPackets(self):
+        if self.minBufferLength() == 0:
+            pass
+        else:
+
+            priorityPacket = b'\x00\x00'
+        
+            #sendPacketForClient
+            for client, packetList in self.receivedPackets.items():
+                data,rest = splitBufferIntoPackets(packetList)
+                self.receivedPackets[client] = rest
+
+                if data[0] >= priorityPacket[0]:
+                    priorityPacket = data
+
+            if priorityPacket[0] == 0:
+                self.client.sendToClient(bytes(priorityPacket))
+            elif priorityPacket[0] == 2:
+                packet = bytes(priorityPacket[:2] + self.client.manager.buildControlPacketForClient(self.client))
+                self.client.sendToClient(packet)
+
+            if self.minBufferLength() > 0:
+                self.tryToSendPackets()
+            
+        
+    def addPacketForClient(self, client, data):
+        self.receivedPackets[client] += data
+
+    def addClient(self, client):
+        self.receivedPackets[client] = []
+        
     
 class ZsnesClient:
     def __init__(self, manager, id, conn, addr):
         self.conn = conn
         self.addr = addr
+
+        self.packetManager = PacketManager(self)
         
         self.manager = manager
         self.id = id
@@ -187,6 +258,10 @@ class ZsnesClient:
             ## in-game
 
             elif data[0] == 0x00: # no idea anymore - some sort of emulator state?
+                
+                
+                data,restData = splitBufferIntoPackets(data)
+                
                 ## double-sending breaks sync?
                 if data != self.lastNonControlPacket:
                     self.lastNonControlPacket = data
@@ -199,7 +274,11 @@ class ZsnesClient:
 
                 # self.manager.sendToOthersBuffered(self, data)
                 self.manager.setLoopPacket(self, data)
-                self.manager.sendPacketForClient(self)
+                # self.manager.sendPacketForClient(self)
+                self.manager.handleLoopPacket(self, data)
+
+                if len(restData) > 0:
+                    self.msgDispatcher(restData)
 
             elif data[0] == 0xe5: # unsure, checking for doublesend
                 # NOT okay to doublesend
@@ -225,11 +304,12 @@ class ZsnesClient:
                 # There is a heartbeat one sent out every so often,
                 # but it is NOT sent if there has been an actual control packet sent.
 
+                data,restData = splitBufferIntoPackets(data)
             
                 #print("received control packet " +  str(binascii.hexlify(data)) + " from " + str(self) + " after " + str(self.numPacketsRecv) + " 0x00 packets")
 
-                if not data == b'\x02\x04\x80\x00\x00':
-                    print(str(data))
+                # if not data == b'\x02\x04\x80\x00\x00':
+                    # print(str(data))
 
                 ## latter part of control packets -- everything after
                 ## \x02 -- 'control packet' header
@@ -275,7 +355,13 @@ class ZsnesClient:
 
                 self.manager.handleControlsFromClient(self, data)
                 self.manager.setLoopPacket(self, data)
-                self.manager.sendPacketForClient(self)
+                
+                self.manager.handleLoopPacket(self, data)
+
+                # self.manager.sendPacketForClient(self)
+
+                if len(restData) > 0:
+                    self.msgDispatcher(restData)
 
             
             
@@ -283,8 +369,6 @@ class ZsnesClient:
                 print(str(self) + " sent new unknown packet " + str(binascii.hexlify(data)))
                 self.manager.sendToOtherClients(self, data)
                 #self.manager.sendToOthersBuffered(self, data)
-
-            
 
     def serve(self):
         #self.connect()

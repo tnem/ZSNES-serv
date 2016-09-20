@@ -50,6 +50,11 @@ class ZsnesClientManager:
     def playerArrayForClient(self, client):
         return [k for k,v in self.playerAssignments.items() if v == client]
 
+    def handleLoopPacket(self, client, data):
+        for oclient in self.allOtherClients(client):
+            oclient.packetManager.addPacketForClient(client, data)
+            oclient.packetManager.tryToSendPackets()
+    
     ## note - this just builds the 'control' part of the packet.
     ## it does not include the leading dispatch or state.
     def buildControlPacketForClient(self, client):
@@ -143,6 +148,11 @@ class ZsnesClientManager:
         
     def addClient(self, conn, addr):
         newClient = ZsnesClient(self, len(self.clients), conn, addr)
+
+        for client in self.clients:
+            newClient.packetManager.addClient(client)
+            client.packetManager.addClient(newClient)
+        
         self.clients.append(newClient)
 
         return newClient
