@@ -8,7 +8,7 @@ import binascii
 from enum import Enum
 import threading
 
-from zsnesClient import ZsnesClient, ClientState
+from zsnesClient import ZsnesClient, ClientState, splitBufferIntoPackets
 from zsnesClientManager import ZsnesClientManager
 
 import pdb

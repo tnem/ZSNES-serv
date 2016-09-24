@@ -7,15 +7,18 @@ import time
 import pdb
 
 ## intended to be called only during the main loop section, where we expect only:
-## 0x00 - general status keepalive, always 4 bytes
+## 0x00|0x08 - general status keepalive, always 4 bytes
 ## 0x02 - control packet, 4 + 6 * x bytes based on number of players
 def splitBufferIntoPackets(buffer):
     firstPacket = []
     restBuffer = buffer
     
-    if buffer[0] == 0:
+    if buffer[0] in [0x00, 0x08]:
         firstPacket = buffer[:2]
         restBuffer = buffer[2:]
+    elif buffer[0] in [0xfe, 0xfd, 0x01]:
+        firstPacket = buffer[:1]
+        restBuffer = buffer[1:]
     elif buffer[0] == 2:
         firstPacket = buffer[:2]
         restBuffer = buffer[2:]
@@ -74,6 +77,10 @@ class PacketManager:
             elif priorityPacket[0] == 2:
                 packet = bytes(priorityPacket[:2] + self.client.manager.buildControlPacketForClient(self.client))
                 self.client.sendToClient(packet)
+            else:
+                print("nonstandard packet: " + str(priorityPacket))
+
+                self.client.sendToClient(bytes(priorityPacket))
 
             if self.minBufferLength() > 0:
                 self.tryToSendPackets()
@@ -113,12 +120,12 @@ class ZsnesClient:
         self.saveBuffer = []
 
     def sendToClient(self, data):
-        # self.packetLog.append(['send', data])
+        self.packetLog.append(['send', data])
         self.conn.sendall(data)
 
     def recvFromClient(self):
         data = self.conn.recv(4096)
-        # self.packetLog.append(['recv', data])
+        self.packetLog.append(['recv', data])
         # print("got data: " + str(binascii.hexlify(data)))
 
         return data
@@ -185,85 +192,27 @@ class ZsnesClient:
                 self.manager.sendToOthersBuffered(self, bytes(self.saveBuffer))
                 #self.manager.sendToOtherClients(self, data)
 
-        # elif self.state == ClientState.InGame:
-
-        else:
-            if data[0:2] == b'ID': # client connection
-                print("client connecting")
-                self.connect(data)
-                self.state = ClientState.Connected
-
-                self.manager.syncNewClientPlayers(self)
-            
-            elif all(x == 0xff for x in data) or data == b'': # client quitting / socket empty
-                print("client exiting!")
-                self.state = ClientState.Disconnected
-                self.manager.removeClient(self)
-
-            elif data[0] == 0x02 and self.state == ClientState.Connected: # sending chat message
-                "Chat messages are encoded as [0x02 string_of_message 0x00]"
-                msg = data[1:-1].decode("ascii")
-                self.manager.sendToOtherClients(self, data)
-                print("receiving chat message: " + msg)
-
-            elif data[0] in [0x03, 0x04, 0x05, 0x06, 0x07] and \
-                self.state == ClientState.Connected: # player assignment message
-                self.manager.claimPlayer(self, (data[0] - 2))
-
-            elif data[0] == 0x14: # setting latency
+        if self.state == ClientState.Paused:
+            if data[0] == 20: #set latency to second byte
                 self.manager.sendToOtherClients(self, data)
 
-            elif data[0] == 0x08: # setting back buffer
-                self.manager.sendToOtherClients(self, data)
-
-                ## save data might need to be modified a little to work 3-way
-                ## currently neutered (except none), and it must be set manually.
-            elif data[0] == 0x29: # wants to use local save data
-                self.manager.sendToOtherClients(self, data)
-                pass
-
-            elif data[0] == 0x2a: # wants to use remote save data
-                #self.manager.sendToOtherClients(self, data)
-                pass
-
-            elif data[0] == 0x32: # wants to use no save data
-                self.manager.sendToOtherClients(self, data)
-            
-                ## starting game management
-
-            elif data[0] == 0x0a: # filename of rom to start
-                print("attempting to launch game: " + data[1:-1].decode("ascii"))
-                self.manager.sendToOtherClients(self, data)
-                self.isLeader = True
+            elif data[0] == 30: #start of a 1e packet
                 self.state = ClientState.FoundRom
+                self.msgDispatcher(data)
 
-            elif data[0] == 0x0b: # file found on remote
-                print("ROM found on remote successfully")
-                self.state = ClientState.FoundRom
-
-                if self.manager.allClientsAre(ClientState.FoundRom): # when all remotes are OK
-                    self.manager.sendToLeaderClient(b'\x0b')
-
-            elif data[0] == 0x0d: # file not found on remote
-                print("file not found on remote")
-                self.manager.sendToOthersBuffered(self, data)
-
-            ## 0xea and 0xe9 can happen in either order, not exactly sure
-            elif data[0] == 0xea: # acknowledging save file request?
-                print("acknowledge file found")
-                self.state = ClientState.RequestSave
-                self.manager.sendToOthersBuffered(self, data)
-
-            elif data[0] == 0xe9: # follower requesting game file?
-                print(str(self) + " requesting save game file")
-                self.state = ClientState.RequestSave
-                self.manager.sendToOthersBuffered(self, data)
-
-            ## in-game
-
-            elif data[0] == 0x00: # no idea anymore - some sort of emulator state?
+            elif data[0] == 0x02: # chat message in this context
+                self.manager.sendToOtherClients(self, data)
                 
-                
+            elif data[0] == 0xfe or data[0] == 0xfd or data[0] == 0x01:
+                data,restData = splitBufferIntoPackets(data)
+
+                self.manager.handleLoopPacket(self, data)
+                if len(restData) > 0:
+                    self.msgDispatcher(restData)
+
+        elif self.state == ClientState.InGame:
+
+            if data[0] == 0x00 or data[0] == 0x08: # no idea anymore - some sort of emulator state?
                 data,restData = splitBufferIntoPackets(data)
                 
                 ## double-sending breaks sync?
@@ -277,13 +226,19 @@ class ZsnesClient:
                 lowestOthers = self.manager.lowestEmuStateOfOthers(self)
 
                 # self.manager.sendToOthersBuffered(self, data)
-                self.manager.setLoopPacket(self, data)
+                self.manager.setLoopPacket(self, data) # unneccesary? 
                 # self.manager.sendPacketForClient(self)
                 self.manager.handleLoopPacket(self, data)
 
                 if len(restData) > 0:
                     self.msgDispatcher(restData)
 
+            elif data[0] == 0xfe or data[0] == 0xfd or data[0] == 0x01:
+                data,restData = splitBufferIntoPackets(data)
+                self.state = ClientState.Paused
+
+                self.manager.handleLoopPacket(self, data)
+                    
             elif data[0] == 0xe5: # unsure, checking for doublesend
                 # NOT okay to doublesend
                 # just mirroring back for now, which is a brittle hacky thing to do!
@@ -367,6 +322,80 @@ class ZsnesClient:
                 if len(restData) > 0:
                     self.msgDispatcher(restData)
 
+
+        else:
+            if data[0:2] == b'ID': # client connection
+                print("client connecting")
+                self.connect(data)
+                self.state = ClientState.Connected
+
+                self.manager.syncNewClientPlayers(self)
+            
+            elif all(x == 0xff for x in data) or data == b'': # client quitting / socket empty
+                print("client exiting!")
+                self.state = ClientState.Disconnected
+                self.manager.removeClient(self)
+
+            elif data[0] == 0x02 and self.state == ClientState.Connected: # sending chat message
+                "Chat messages are encoded as [0x02 string_of_message 0x00]"
+                msg = data[1:-1].decode("ascii")
+                self.manager.sendToOtherClients(self, data)
+                print("receiving chat message: " + msg)
+
+            elif data[0] in [0x03, 0x04, 0x05, 0x06, 0x07] and \
+                self.state == ClientState.Connected: # player assignment message
+                self.manager.claimPlayer(self, (data[0] - 2))
+
+            elif data[0] == 0x14: # setting latency
+                self.manager.sendToOtherClients(self, data)
+
+            elif data[0] == 0x08: # setting back buffer
+                self.manager.sendToOtherClients(self, data)
+
+                ## save data might need to be modified a little to work 3-way
+                ## currently neutered (except none), and it must be set manually.
+            elif data[0] == 0x29: # wants to use local save data
+                self.manager.sendToOtherClients(self, data)
+                pass
+
+            elif data[0] == 0x2a: # wants to use remote save data
+                #self.manager.sendToOtherClients(self, data)
+                pass
+
+            elif data[0] == 0x32: # wants to use no save data
+                self.manager.sendToOtherClients(self, data)
+            
+                ## starting game management
+
+            elif data[0] == 0x0a: # filename of rom to start
+                print("attempting to launch game: " + data[1:-1].decode("ascii"))
+                self.manager.sendToOtherClients(self, data)
+                self.isLeader = True
+                self.state = ClientState.FoundRom
+
+            elif data[0] == 0x0b: # file found on remote
+                print("ROM found on remote successfully")
+                self.state = ClientState.FoundRom
+
+                if self.manager.allClientsAre(ClientState.FoundRom): # when all remotes are OK
+                    self.manager.sendToLeaderClient(b'\x0b')
+
+            elif data[0] == 0x0d: # file not found on remote
+                print("file not found on remote")
+                self.manager.sendToOthersBuffered(self, data)
+
+            ## 0xea and 0xe9 can happen in either order, not exactly sure
+            elif data[0] == 0xea: # acknowledging save file request?
+                print("acknowledge file found")
+                self.state = ClientState.RequestSave
+                self.manager.sendToOthersBuffered(self, data)
+
+            elif data[0] == 0xe9: # follower requesting game file?
+                print(str(self) + " requesting save game file")
+                self.state = ClientState.RequestSave
+                self.manager.sendToOthersBuffered(self, data)
+
+            
             
             
             else: # debugging catchall
