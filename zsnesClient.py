@@ -206,7 +206,7 @@ class ZsnesClient:
             elif data[0] == 0xfe or data[0] == 0xfd or data[0] == 0x01:
                 data,restData = splitBufferIntoPackets(data)
 
-                self.manager.handleLoopPacket(self, data)
+                self.manager.sendToOthersBuffered(self, data)
                 if len(restData) > 0:
                     self.msgDispatcher(restData)
 
@@ -237,7 +237,7 @@ class ZsnesClient:
                 data,restData = splitBufferIntoPackets(data)
                 self.state = ClientState.Paused
 
-                self.manager.handleLoopPacket(self, data)
+                self.manager.sendToOthersBuffered(self, data)
                     
             elif data[0] == 0xe5: # unsure, checking for doublesend
                 # NOT okay to doublesend
