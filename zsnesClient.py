@@ -33,6 +33,7 @@ class ClientState():
     FoundRom = 3
     RequestSave = 4
     InGame = 5
+    Paused = 6
 
 ## The idea is to have one PacketManager per client.
 ## Every time a client sends in a packet, it gets added to every other client's PacketManager.
@@ -172,8 +173,8 @@ class ZsnesClient:
     def msgDispatcher(self, init_data):
         data = init_data
 
-        if self.state == ClientState.RequestSave:
-            print("stashing savebuffer data")
+        if self.state == ClientState.RequestSave or self.state == ClientState.FoundRom:
+            print("stashing savebuffer data if necessary")
             self.saveBuffer += data
             ## end of 'sending game data' - will appear on its own if no save data is sent
             if data[-4:] == b'\x1e\xe6\xfc\x51':
@@ -183,6 +184,9 @@ class ZsnesClient:
                 self.state = ClientState.InGame
                 self.manager.sendToOthersBuffered(self, bytes(self.saveBuffer))
                 #self.manager.sendToOtherClients(self, data)
+
+        # elif self.state == ClientState.InGame:
+
         else:
             if data[0:2] == b'ID': # client connection
                 print("client connecting")
