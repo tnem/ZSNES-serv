@@ -24,7 +24,6 @@ Client:
 * When you save your game, exit ZSNES via its menu, not just clicking X to ensure a good save.
 
 # Currently unhandled:
-* Pausing
 * Save states
-* Desyncs
+* Clients quitting gracefully
 * Probably more
